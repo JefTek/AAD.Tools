@@ -28,7 +28,12 @@ function Get-AADTGraphAuthToken
         [ValidateSet("graph.windows.net", "graph.microsoft.com")]
         [string]
         $EndPoint="graph.microsoft.com",
-		$CredentialType = "UserCredential"
+		# Utilize a UserCredential or ClientCredential (Application) to get the authorization token
+		[ValidateSet("UserCredential", "ClientCredential")]
+		$CredentialType = "UserCredential",
+		# Return as Authorization Header for use in REST API Calls
+		[switch]
+		$asAuthHeader
     )
 
 		
@@ -67,7 +72,15 @@ function Get-AADTGraphAuthToken
 
 	   $authResult = $authContext.AcquireToken($resourceAppIdURI, $clientID,$aadCreds)
 
+
+	   if ($asAuthHeader)
+	   {
+		Write-Output (Get-AADTRestAuthHeader -AuthToken $authResult)
+	   }
+	   else
+	   {
 	   Write-Output $authResult
+	   }
 
 }
 
