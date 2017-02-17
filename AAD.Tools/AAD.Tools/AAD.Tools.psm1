@@ -154,7 +154,7 @@ function Get-AADTGraphAuthToken
 
 	   if ($asAuthHeader)
 	   {
-		Write-Output (Get-AADTRestAuthHeader -AuthToken $authResult)
+		Write-Output ($authResult|Get-AADTRestAuthHeader)
 	   }
 	   else
 	   {
@@ -181,7 +181,7 @@ function Get-AADTRestAuthHeader
     (
         # Auth Token provided by Azure AD for accessing a resource
         [Parameter(Mandatory=$true,
-                   ValueFromPipelineByPropertyName=$true,
+                   ValueFromPipeline=$true,
                    Position=0)]
         $AuthToken
     )
