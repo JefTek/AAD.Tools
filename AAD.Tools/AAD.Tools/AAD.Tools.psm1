@@ -1,5 +1,73 @@
 <#
 .Synopsis
+   Get OpenID Connect Endpoint information for a AAD Tenant Name
+.DESCRIPTION
+   By retrieving OIDC information for a tenant we can determine if the name is in use, and what tenant ID has the name associated with it.
+.EXAMPLE
+   Example of how to use this cmdlet
+.EXAMPLE
+   Another example of how to use this cmdlet
+#>
+function Check-AADTenantName
+{
+    [CmdletBinding()]
+    [Alias()]
+    [OutputType([int])]
+    Param
+    (
+        # Param1 help description
+        [Parameter(Mandatory=$true,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=0)]
+        [string[]]
+        $TenantName
+        
+    )
+
+    Begin
+    {
+        
+    }
+    Process
+    {
+        foreach ($name in $TenantName)
+        {
+            $Tenant = $null
+            $TenantGUID=$null
+            $TenantRegion=$Null
+            $TenantCloudInstanceName=$Null
+
+           $TenantUri = "https://login.microsoftonline.com/$Name/.well-known/openid-configuration."
+
+            try
+            {
+                $Tenant =  Invoke-WebRequest -Uri $TenantUri|% content|ConvertFrom-Json
+                $NameFound=$true
+
+                $TenantGUID = $Tenant.issuer.split("/")[3]
+                $TenantRegion = $Tenant.tenant_region_scope
+                $TenantCloudInstanceName=$tenant.cloud_instance_name
+           }
+           catch
+           {
+                $NameFound=$false
+           }
+           Finally
+           {
+           $TenantInfo = [pscustomobject]@{NameCheck=$Name;NameFound=$NameFound;TenantGUID=$TenantGUID;TenantRegion=$TenantRegion;TenantCloudInstanceName=$TenantCloudInstanceName}
+           }
+           Write-Output $TenantInfo
+           
+        }
+
+    }
+    End
+    {
+    }
+}
+
+<#
+.Synopsis
    Get Graph Authorization Token from AAD tenant for User or Client credentials
 .DESCRIPTION
    Use "application/json" as content type and get SDK pieces from http://aka.ms/webpi-azps
@@ -33,7 +101,9 @@ function Get-AADTGraphAuthToken
 		$CredentialType = "UserCredential",
 		# Return as Authorization Header for use in REST API Calls
 		[switch]
-		$asAuthHeader
+		$asAuthHeader,
+		[switch]
+		$supportMFA
     )
 
 		
@@ -47,13 +117,26 @@ function Get-AADTGraphAuthToken
        $resourceAppIdURI = "https://"+$EndPoint
        $authority = "https://login.windows.net/$aadTenantName"
 	   $authContext = New-Object "Microsoft.IdentityModel.Clients.ActiveDirectory.AuthenticationContext" -ArgumentList $authority
+	   $promptBehavior = New-Object Microsoft.IdentityModel.Clients.ActiveDirectory.PromptBehavior
 
+
+	   $authResult = $null
 		switch ($CredentialType)
 		{
 			"UserCredential"
 			{
-				$aadCreds = New-Object Microsoft.IdentityModel.Clients.ActiveDirectory.UserCredential($credential.GetNetworkCredential().username,$credential.GetNetworkCredential().password)
-				$authResult = $authContext.AcquireToken($resourceAppIdURI, $clientID,$aadCreds)
+				if ($supportMFA)
+				{
+					$Prompt = $promptBehavior.Always
+					$authResult = $authContext.AcquireToken($resourceAppIdURI, $clientID, $redirectUri)
+				}
+				else
+				{
+				     $Prompt = $promptBehavior.Auto
+					 $aadCreds = New-Object Microsoft.IdentityModel.Clients.ActiveDirectory.UserCredential($credential.GetNetworkCredential().username,$credential.GetNetworkCredential().password)
+					 $authResult = $authContext.AcquireToken($resourceAppIdURI, $clientID, $aadCreds)
+				}
+				
 			}
 
 			"ClientCredential"
@@ -67,10 +150,6 @@ function Get-AADTGraphAuthToken
 		
 		Write-Verbose "AADCreds = $aadCreds"
 	
-	   
-       $authResult = $null
-
-	   $authResult = $authContext.AcquireToken($resourceAppIdURI, $clientID,$aadCreds)
 
 
 	   if ($asAuthHeader)
@@ -79,7 +158,7 @@ function Get-AADTGraphAuthToken
 	   }
 	   else
 	   {
-	   Write-Output $authResult
+			Write-Output $authResult
 	   }
 
 }
