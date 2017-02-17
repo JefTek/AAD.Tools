@@ -8,7 +8,7 @@
 .EXAMPLE
    Another example of how to use this cmdlet
 #>
-function Check-AADTenantName
+function Get-AADTTenantNameInfo
 {
     [CmdletBinding()]
     [Alias()]
