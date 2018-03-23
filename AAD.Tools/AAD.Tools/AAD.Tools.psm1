@@ -1,3 +1,37 @@
+function Import-ADAL(){
+  $moduleDirPath = [Environment]::GetFolderPath("MyDocuments") + "\WindowsPowerShell\Modules"
+  $modulePath = $moduleDirPath + "\AADGraph"
+  if(-not (Test-Path ($modulePath+"\Nugets"))) {New-Item -Path ($modulePath+"\Nugets") -ItemType "Directory" | out-null}
+  $adalPackageDirectories = (Get-ChildItem -Path ($modulePath+"\Nugets") -Filter "Microsoft.IdentityModel.Clients.ActiveDirectory*" -Directory)
+  if($adalPackageDirectories.Length -eq 0){
+    Write-Host "Active Directory Authentication Library Nuget doesn't exist. Downloading now ..." -ForegroundColor Yellow
+    if(-not(Test-Path ($modulePath + "\Nugets\nuget.exe")))
+    {
+      Write-Host "nuget.exe not found. Downloading from http://www.nuget.org/nuget.exe ..." -ForegroundColor Yellow
+      $wc = New-Object System.Net.WebClient
+      $wc.DownloadFile("http://www.nuget.org/nuget.exe",$modulePath + "\Nugets\nuget.exe");
+    }
+    $nugetDownloadExpression = $modulePath + "\Nugets\nuget.exe install Microsoft.IdentityModel.Clients.ActiveDirectory -Version 2.14.201151115 -OutputDirectory " + $modulePath + "\Nugets | out-null"
+    Invoke-Expression $nugetDownloadExpression
+  }
+  $adalPackageDirectories = (Get-ChildItem -Path ($modulePath+"\Nugets") -Filter "Microsoft.IdentityModel.Clients.ActiveDirectory*" -Directory)
+  $ADAL_Assembly = (Get-ChildItem "Microsoft.IdentityModel.Clients.ActiveDirectory.dll" -Path $adalPackageDirectories[$adalPackageDirectories.length-1].FullName -Recurse)
+  $ADAL_WindowsForms_Assembly = (Get-ChildItem "Microsoft.IdentityModel.Clients.ActiveDirectory.WindowsForms.dll" -Path $adalPackageDirectories[$adalPackageDirectories.length-1].FullName -Recurse)
+  if($ADAL_Assembly.Length -gt 0 -and $ADAL_WindowsForms_Assembly.Length -gt 0){
+    Write-Host "Loading ADAL Assemblies ..." -ForegroundColor Green
+    [System.Reflection.Assembly]::LoadFrom($ADAL_Assembly[0].FullName) | out-null
+    [System.Reflection.Assembly]::LoadFrom($ADAL_WindowsForms_Assembly.FullName) | out-null
+    return $true
+  }
+  else{
+    Write-Host "Fixing Active Directory Authentication Library package directories ..." -ForegroundColor Yellow
+    $adalPackageDirectories | Remove-Item -Recurse -Force | Out-Null
+    Write-Host "Not able to load ADAL assembly. Delete the Nugets folder under" $modulePath ", restart PowerShell session and try again ..."
+    return $false
+  }
+}
+
+
 <#
 .Synopsis
    Get OpenID Connect Endpoint information for a AAD Tenant Name
@@ -70,7 +104,7 @@ function Get-AADTTenantNameInfo
 .Synopsis
    Get Graph Authorization Token from AAD tenant for User or Client credentials
 .DESCRIPTION
-   Use "application/json" as content type and get SDK pieces from http://aka.ms/webpi-azps
+   Use "application/json" as content type and load assempblies from import-ADAL
 .EXAMPLE
    Example of how to use this cmdlet
 .EXAMPLE
@@ -86,6 +120,7 @@ function Get-AADTGraphAuthToken
         [Parameter(Mandatory=$true,
                    ValueFromPipelineByPropertyName=$true,
                    Position=0)]
+		[alias("TenantName")]
         $AADTenantName,
 		[Parameter(Mandatory=$true,
                    ValueFromPipelineByPropertyName=$true,
@@ -106,19 +141,14 @@ function Get-AADTGraphAuthToken
 		$supportMFA
     )
 
-		
-		$adal = "${env:ProgramFiles(x86)}\Microsoft SDKs\Azure\PowerShell\ServiceManagement\Azure\Services\Microsoft.IdentityModel.Clients.ActiveDirectory.dll"
-       $adalforms = "${env:ProgramFiles(x86)}\Microsoft SDKs\Azure\PowerShell\ServiceManagement\Azure\Services\Microsoft.IdentityModel.Clients.ActiveDirectory.WindowsForms.dll"
-       [System.Reflection.Assembly]::LoadFrom($adal) | Out-Null
-       [System.Reflection.Assembly]::LoadFrom($adalforms) | Out-Null
 
-		$clientId = "1950a258-227b-4e31-a9cf-717495945fc2" 
+	   $clientId = "1950a258-227b-4e31-a9cf-717495945fc2" 
        $redirectUri = "urn:ietf:wg:oauth:2.0:oob"
        $resourceAppIdURI = "https://"+$EndPoint
        $authority = "https://login.windows.net/$aadTenantName"
 	   $authContext = New-Object "Microsoft.IdentityModel.Clients.ActiveDirectory.AuthenticationContext" -ArgumentList $authority
 	   $promptBehavior = New-Object Microsoft.IdentityModel.Clients.ActiveDirectory.PromptBehavior
-
+	Write-Verbose "Authority = $authority"
 
 	   $authResult = $null
 		switch ($CredentialType)
@@ -363,9 +393,14 @@ function Get-AADTMSGraphObjects
 				 
 				if (!$UseDeltaQuery)
 				{
-		
-					$uri = ("https://{0}/{1}/{2}s?top={3}" -f $EndPoint,$APIVersion,$ObjectType,$top)
-				
+					if ($null -like $filter)
+					{
+						$uri = ("https://{0}/{1}/{2}s?top={3}" -f $EndPoint,$APIVersion,$ObjectType,$top)
+					}
+					else {
+						
+						$uri = ("https://{0}/{1}/{2}s?top={3}&filter={4}" -f $EndPoint,$APIVersion,$ObjectType,$top,$filter)
+					}
 				}
 				else
 				{
@@ -379,7 +414,16 @@ function Get-AADTMSGraphObjects
 				{
 		
 					$selectAttributes = $attributes -join ','
-					$uri = ("https://{0}/{1}/{2}s?select={3}&top={4}" -f $Endpoint,$APIVersion,$ObjectType,$selectAttributes,$top)
+
+					if ($null -like $filter)
+					{
+						$uri = ("https://{0}/{1}/{2}s?select={3}&top={4}" -f $Endpoint,$APIVersion,$ObjectType,$selectAttributes,$top)
+					}
+					else {
+						
+						$uri = ("https://{0}/{1}/{2}s?select={3}&top={4}&filter={5}" -f $Endpoint,$APIVersion,$ObjectType,$selectAttributes,$top,$filter)
+					}
+					
 		   
 				
 				}
@@ -513,7 +557,8 @@ function Add-AADTExternalUser
                    ValueFromRemainingArguments=$false, 
                    Position=0)]
         [ValidateNotNull()]
-        [ValidateNotNullOrEmpty()]
+		[ValidateNotNullOrEmpty()]
+		[pscredential]
         $Credential,
 
         # AAD Tenant Name to invite user too
@@ -697,5 +742,178 @@ function Add-AADTExternalUser
     }
     End
     {
+    }
+}
+
+function Get-AADTGraphObjects
+{
+[CmdletBinding()]
+    [OutputType([int])]
+    Param
+    (
+        # Authorization Token from Azure AD
+        [Parameter(Mandatory=$true,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=0)]
+        $AuthHeader,
+		[Parameter(Mandatory=$true,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=1)]
+		[string]
+		$ObjectType,
+		[Parameter(Mandatory=$false,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=2)]
+		[string]
+		$APIVersion = "beta",
+		[Parameter(Mandatory=$false,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=0)]
+		[string[]]
+		$Attributes,
+		[Parameter(Mandatory=$false,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=0)]
+		[string]
+		$Filter,
+		[string]
+		$EndPoint = "graph.windows.net",
+		$Top,
+		[switch]
+		$All,
+		[string]
+		$DeltaLink,
+		[string]
+		$Organization="myorganization"
+
+
+    )
+
+    Begin
+    {
+			$results = @{}
+			$results.Values = $null
+			$results.DeltaLink = $null
+    }
+    Process
+    {
+
+		if ($UseDeltaQuery -and ($null -notlike $DeltaLink))
+		{
+				Write-Verbose "Using DeltaQueryLink!"	
+				$uri = $DeltaLink
+		}
+		else
+		{
+
+	
+			if ($Attributes -like $null)
+			{
+				 
+			
+						if ($null -like $top)
+						{
+							$uri = ("https://{0}/{1}/{2}s?api-version={3}" -f $EndPoint,$organization,$ObjectType,$APIVersion)
+						}
+						else
+						{
+							$uri = ("https://{0}/{1}/{2}s?api-version={3}&top={4}" -f $EndPoint,$organization,$ObjectType,$APIVersion,$top)
+						}
+						
+				
+			}
+			else
+			{
+
+				if (!$UseDeltaQuery)
+				{
+		
+					$selectAttributes = $attributes -join ','
+					
+					$uri = ("https://{0}/{1}/{2}s?api-version={3}top={4}" -f $EndPoint,$organization,$ObjectType,$APIVersion,$top)
+		   
+				
+				}
+				else
+				{
+					$selectAttributes = $attributes -join ','
+					$uri = ("https://{0}/{1}/{2}s/delta?select={3}&top={4}" -f $Endpoint,$APIVersion,$ObjectType,$selectAttributes,$top)
+		   
+				}
+			
+			}
+		   }
+
+
+		write-debug ("DEBUG:AAD Graph URI:{0}" -f $uri)
+		$cmd = 'Invoke-RestMethod -Method Get -Uri $Uri -Headers $AuthHeader'
+	
+	
+
+		$statusMsg = "VEBOSE:Invoking Expression $cmd"
+		write-verbose $statusMsg
+		$activityName = $MyInvocation.InvocationName
+
+		Write-Progress -Id 1 -Activity $activityName -Status $statusMsg
+		$x = $null
+		try{
+			$x = Invoke-Expression $cmd
+		}
+		catch
+		{
+			write-error $_
+		}
+		$pagedUri = $Null
+
+	if ($x)
+	{
+		$i = 1
+
+		
+		do 
+		{
+			 
+		   Write-Verbose ("VERBOSE:Query Paging page {0} for {1}" -f $i++,$ObjectType )
+		  
+			$results.Values += $x.value
+			if (Get-Member -inputobject $x -name 'odata.nextlink' -MemberType Properties)
+			{
+				
+				$skipToken = $x.'odata.nextlink'.split('?')[1]
+				$pagedUri = ("{0}&{1}" -f $uri,$skipToken)
+				
+				if ($pagedUri -notlike $Null)
+				{
+					Write-Debug ("DEBUG:Getting Next Page of results using Paging URI: {0}" -f $pagedUri )
+					$cmd = 'Invoke-RestMethod -Method Get -Uri $pagedUri -Headers $AuthHeader'
+					$x = $null
+					$x = Invoke-Expression $cmd
+				}
+			}
+			else
+			{
+				$pagedUri = $null
+			}
+
+
+			
+			
+		}
+		until ($pagedUri -eq $Null)
+        
+
+		if (Get-Member -inputobject $x -name '@odata.deltalink' -MemberType Properties)
+			{
+				$results.deltalink = $x.'@odata.deltalink'
+				Write-Verbose ("Delta Link: {0}" -f $results.deltalink)
+			}
+		
+    }
+	}
+	
+    End
+    {
+		
+        Write-Output ([pscustomobject]$results)
     }
 }
