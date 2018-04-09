@@ -11,7 +11,7 @@ function Import-ADAL(){
       $wc = New-Object System.Net.WebClient
       $wc.DownloadFile("http://www.nuget.org/nuget.exe",$modulePath + "\Nugets\nuget.exe");
     }
-    $nugetDownloadExpression = $modulePath + "\Nugets\nuget.exe install Microsoft.IdentityModel.Clients.ActiveDirectory -Version 2.14.201151115 -OutputDirectory " + $modulePath + "\Nugets | out-null"
+    $nugetDownloadExpression = $modulePath + "\Nugets\nuget.exe install Microsoft.IdentityModel.Clients.ActiveDirectory -Version 2.19.208020213 -OutputDirectory " + $modulePath + "\Nugets | out-null"
     Invoke-Expression $nugetDownloadExpression
   }
   $adalPackageDirectories = (Get-ChildItem -Path ($modulePath+"\Nugets") -Filter "Microsoft.IdentityModel.Clients.ActiveDirectory*" -Directory)
@@ -143,7 +143,7 @@ function Get-AADTGraphAuthToken
 
 
 	   $clientId = "1950a258-227b-4e31-a9cf-717495945fc2" 
-       $redirectUri = "urn:ietf:wg:oauth:2.0:oob"
+       [uri]$redirectUri = "urn:ietf:wg:oauth:2.0:oob"
        $resourceAppIdURI = "https://"+$EndPoint
        $authority = "https://login.windows.net/$aadTenantName"
 	   $authContext = New-Object "Microsoft.IdentityModel.Clients.ActiveDirectory.AuthenticationContext" -ArgumentList $authority
@@ -158,7 +158,7 @@ function Get-AADTGraphAuthToken
 				if ($supportMFA)
 				{
 					$Prompt = $promptBehavior.Always
-					$authResult = $authContext.AcquireToken($resourceAppIdURI, $clientID, $redirectUri)
+					$authResult = $authContext.AcquireToken($resourceAppIdURI, $clientID, $redirectUri,[Microsoft.IdentityModel.Clients.ActiveDirectory.PromptBehavior]::Always)
 				}
 				else
 				{
