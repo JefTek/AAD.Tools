@@ -138,11 +138,14 @@ function Get-AADTGraphAuthToken
 		[switch]
 		$asAuthHeader,
 		[switch]
-		$supportMFA
+		$supportMFA,
+		# Setup your Application and Service Principal as per https://docs.microsoft.com/en-us/powershell/azure/create-azure-service-principal-azureps?view=azurermps-6.0.0
+		[string]
+		$ClientId
     )
 
 
-	   $clientId = "1950a258-227b-4e31-a9cf-717495945fc2" 
+
        [uri]$redirectUri = "urn:ietf:wg:oauth:2.0:oob"
        $resourceAppIdURI = "https://"+$EndPoint
        $authority = "https://login.windows.net/$aadTenantName"
@@ -155,6 +158,11 @@ function Get-AADTGraphAuthToken
 		{
 			"UserCredential"
 			{
+				if ($null -eq $ClientId)
+				{
+					Write-Error ("ClientID needed for UserCredential! - See Cmdlet help.")
+				}
+
 				if ($supportMFA)
 				{
 					$Prompt = $promptBehavior.Always
